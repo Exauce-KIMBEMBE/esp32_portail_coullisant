@@ -1,53 +1,94 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Portail ESP32</title>
-  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Portail Connecté</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-<div class="container">
-  <h1>Portail Coulissant</h1>
+<div class="app">
 
-  <div class="status-card">
-    <div id="stateLight" class="light unknown"></div>
+  <header class="topbar">
+    <div>
+      <h1>Portail Connecté</h1>
+      <p>Contrôle intelligent du portail coulissant</p>
+    </div>
+
+    <button id="connectBtn" onclick="manualReconnect()">↻</button>
+  </header>
+
+  <section class="panel status-line">
+    <span id="connectionText">Déconnecté</span>
+    <span id="rtcTime">--:--:--</span>
+  </section>
+
+  <section class="panel leds">
+    <div>
+      <span id="redLed" class="led off"></span>
+      <small>Rouge</small>
+    </div>
+
+    <div>
+      <span id="greenLed" class="led off"></span>
+      <small>Vert</small>
+    </div>
+
+    <div>
+      <span id="buzzerLed" class="led off"></span>
+      <small>Buzzer</small>
+    </div>
+  </section>
+
+  <section class="panel gate">
+    <div id="gateIndicator" class="gate-indicator unknown"></div>
     <h2 id="gateState">État inconnu</h2>
-    <p id="rtcTime">--/--/---- --:--:--</p>
-  </div>
+    <p id="motorState">Moteur : --</p>
+    <p id="obstacleState">Obstacle : --</p>
+  </section>
 
-  <div class="buttons">
+  <section class="panel controls">
+    <button class="home" onclick="sendCommand('home')">Home</button>
     <button class="open" onclick="sendCommand('open')">Ouvrir</button>
     <button class="close" onclick="sendCommand('close')">Fermer</button>
     <button class="stop" onclick="sendCommand('stop')">Stop</button>
-    <button class="toggle" onclick="sendCommand('toggle')">Ouvrir / Fermer</button>
-  </div>
+  </section>
 
-  <div class="card">
-    <h3>Réglages</h3>
+  <section class="panel settings">
+    <label>
+      Vitesse <b><span id="speedValue">50</span>%</b>
+      <input type="range" id="motorSpeed" min="10" max="100" value="50">
+    </label>
 
-    <label>Vitesse moteur</label>
-    <input type="range" id="motorSpeed" min="100" max="2000" value="800">
-    <span id="speedValue">800</span>
+    <label>
+      Obstacle <b><span id="distanceValue">40</span> cm</b>
+      <input type="range" id="obstacleDistance" min="10" max="150" value="40">
+    </label>
 
-    <label>Fermeture auto (secondes)</label>
-    <input type="number" id="autoCloseDelay" min="5" max="600" value="30">
+    <label>
+      Tempo auto
+      <input type="number" id="autoCloseDelay" min="5" max="600" value="30">
+    </label>
 
-    <button onclick="saveSettings()">Enregistrer</button>
-  </div>
+    <button class="save" onclick="saveSettings()">Enregistrer</button>
+  </section>
 
-  <div class="card">
-    <h3>Sécurité</h3>
-    <p>Obstacle : <span id="obstacle">--</span></p>
-    <p>Moteur : <span id="motorState">--</span></p>
-    <p>Dernière commande : <span id="lastCommand">--</span></p>
-  </div>
+  <section class="panel">
+    <button class="history-btn" onclick="toggleHistory()">Historique</button>
 
-  <div class="card">
-    <h3>Historique</h3>
-    <ul id="logs"></ul>
-  </div>
+    <div id="historyBox" class="hidden">
+      <ul id="logs"></ul>
+      <button class="pdf" onclick="downloadLogsPDF()">Télécharger PDF</button>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="footer-line"></div>
+    <p>Portail Connecté © 2026</p>
+    <small>ESP32 • Contrôle Web • IR • Automatisation</small>
+  </footer>
+
 </div>
 
 <script src="script.js"></script>
