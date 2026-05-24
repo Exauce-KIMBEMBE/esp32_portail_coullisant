@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portail ESP32</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="container">
+  <h1>Portail Coulissant</h1>
+
+  <div class="status-card">
+    <div id="stateLight" class="light unknown"></div>
+    <h2 id="gateState">État inconnu</h2>
+    <p id="rtcTime">--/--/---- --:--:--</p>
+  </div>
+
+  <div class="buttons">
+    <button class="open" onclick="sendCommand('open')">Ouvrir</button>
+    <button class="close" onclick="sendCommand('close')">Fermer</button>
+    <button class="stop" onclick="sendCommand('stop')">Stop</button>
+    <button class="toggle" onclick="sendCommand('toggle')">Ouvrir / Fermer</button>
+  </div>
+
+  <div class="card">
+    <h3>Réglages</h3>
+
+    <label>Vitesse moteur</label>
+    <input type="range" id="motorSpeed" min="100" max="2000" value="800">
+    <span id="speedValue">800</span>
+
+    <label>Fermeture auto (secondes)</label>
+    <input type="number" id="autoCloseDelay" min="5" max="600" value="30">
+
+    <button onclick="saveSettings()">Enregistrer</button>
+  </div>
+
+  <div class="card">
+    <h3>Sécurité</h3>
+    <p>Obstacle : <span id="obstacle">--</span></p>
+    <p>Moteur : <span id="motorState">--</span></p>
+    <p>Dernière commande : <span id="lastCommand">--</span></p>
+  </div>
+
+  <div class="card">
+    <h3>Historique</h3>
+    <ul id="logs"></ul>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
