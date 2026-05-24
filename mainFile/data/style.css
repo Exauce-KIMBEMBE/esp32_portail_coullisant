@@ -1,0 +1,120 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #101820;
+  color: white;
+}
+
+.container {
+  max-width: 520px;
+  margin: auto;
+  padding: 20px;
+}
+
+h1 {
+  text-align: center;
+}
+
+.card,
+.status-card {
+  background: #1f2a36;
+  padding: 18px;
+  border-radius: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 12px #0005;
+}
+
+.status-card {
+  text-align: center;
+}
+
+.light {
+  width: 65px;
+  height: 65px;
+  border-radius: 50%;
+  margin: 10px auto;
+  background: gray;
+}
+
+.light.open {
+  background: #2ecc71;
+}
+
+.light.closed {
+  background: #e74c3c;
+}
+
+.light.moving {
+  background: #e74c3c;
+  animation: blink 1s infinite;
+}
+
+.light.obstacle {
+  background: #e74c3c;
+  animation: blink 0.25s infinite;
+}
+
+.light.unknown {
+  background: #7f8c8d;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.2;
+  }
+}
+
+.buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+button {
+  padding: 14px;
+  border: none;
+  border-radius: 12px;
+  color: white;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.open {
+  background: #27ae60;
+}
+
+.close {
+  background: #c0392b;
+}
+
+.stop {
+  background: #e67e22;
+}
+
+.toggle {
+  background: #2980b9;
+}
+
+.card button {
+  background: #16a085;
+  width: 100%;
+  margin-top: 12px;
+}
+
+input {
+  width: 100%;
+  margin: 8px 0 14px;
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+}
+
+ul {
+  padding-left: 20px;
+}
+
+li {
+  margin-bottom: 6px;
+  font-size: 14px;
+}
