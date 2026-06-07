@@ -1,3 +1,5 @@
+#define DECODE_NEC
+
 #include <WiFi.h>
 #include <WebServer.h>
 #include <SPIFFS.h>
@@ -20,7 +22,7 @@ WebServer server(80);
 Preferences prefs;
 RTC_DS1307 rtc;
 
-// ================= IR =================
+// ================= IR NEC =================
 
 #define CMD_ouverture  0x08
 #define CMD_Fermeture  0x5A
@@ -336,14 +338,18 @@ void buttonLoop() {
 void irLoop() {
   if (!IrReceiver.decode()) return;
 
-  uint32_t code = IrReceiver.decodedIRData.command;
+  if (IrReceiver.decodedIRData.protocol == NEC) {
+    uint8_t command = IrReceiver.decodedIRData.command;
 
-  if (code == CMD_ouverture) {
-    commandOpen("IR");
-  } else if (code == CMD_Fermeture) {
-    commandClose("IR");
-  } else if (code == CMD_STOP) {
-    commandStop("IR");
+    if (command == CMD_ouverture) {
+      commandOpen("IR NEC");
+    } 
+    else if (command == CMD_Fermeture) {
+      commandClose("IR NEC");
+    } 
+    else if (command == CMD_STOP) {
+      commandStop("IR NEC");
+    }
   }
 
   IrReceiver.resume();
