@@ -6,7 +6,6 @@
 #include <Wire.h>
 #include <RTClib.h>
 #include <IRremote.hpp>
-#include <TMCStepper.h>
 #include <Preferences.h>
 
 // ================= WIFI =================
@@ -32,38 +31,20 @@ RTC_DS1307 rtc;
 
 #define PIN_LED_ROUGE        13
 #define PIN_LED_VERTE        12
-#define PIN_BUZZER           14
+#define PIN_BUZZER           27
 
-#define PIN_BOUTON           27
-#define PIN_IR               26
+#define PIN_BOUTON           14
+#define PIN_IR               5
 
-#define PIN_FIN_FERMETURE    25
-#define PIN_FIN_OUVERTURE    33
+#define PIN_FIN_FERMETURE    4
+#define PIN_FIN_OUVERTURE    2
 
-#define PIN_ULTRASON_TRIG    32
-#define PIN_ULTRASON_ECHO    35
-
-#define PIN_TMC_STEP         18
-#define PIN_TMC_DIR          19
-#define PIN_TMC_EN           23
-
-#define PIN_TMC_RX           16
-#define PIN_TMC_TX           17
+#define PIN_MOTOR_IN1 19
+#define PIN_MOTOR_IN2 23
 
 #define PIN_RTC_SDA          21
 #define PIN_RTC_SCL          22
 
-// ================= TMC2209 =================
-
-#define R_SENSE 0.11f
-#define DRIVER_ADDRESS 0b00
-
-HardwareSerial TMCSerial(2);
-TMC2209Stepper driver(&TMCSerial, R_SENSE, DRIVER_ADDRESS);
-
-const int MOTOR_FULL_STEPS = 200;
-const int MICROSTEPS = 16;
-const int STEPS_PER_REV = MOTOR_FULL_STEPS * MICROSTEPS;
 
 // ================= PARAMETRES =================
 
@@ -85,6 +66,19 @@ bool autoCloseWaiting = false;
 bool blinkState = false;
 
 unsigned long lastBlinkMillis = 0;
+
+unsigned long lastSerialMillis = 0;
+unsigned long lastPositionCheckMillis = 0;
+
+bool lastButtonPrinted = HIGH;
+bool lastClosedLimitPrinted = HIGH;
+bool lastOpenLimitPrinted = HIGH;
+
+unsigned long lastBuzzerMillis = 0;
+bool buzzerState = false;
+
+const unsigned long BUZZER_ON_TIME = 100;
+const unsigned long BUZZER_OFF_TIME = 100;
 
 String gateState = "fermé";
 String motorState = "arrêté";
@@ -145,8 +139,26 @@ void saveSettings() {
   prefs.putInt("tempo", autoCloseDelaySec);
 }
 
+int motorPWM = 70;
+
 void updateSpeed() {
-  stepIntervalUs = map(motorSpeedPercent, 10, 100, 2500, 350);
+  motorPWM = map(motorSpeedPercent, 10, 100, 80, 255);
+}
+
+void buzzerIntermittentLoop() {
+  if (!motorRunning) {
+    digitalWrite(PIN_BUZZER, LOW);
+    buzzerState = false;
+    return;
+  }
+
+  unsigned long interval = buzzerState ? BUZZER_ON_TIME : BUZZER_OFF_TIME;
+
+  if (millis() - lastBuzzerMillis >= interval) {
+    lastBuzzerMillis = millis();
+    buzzerState = !buzzerState;
+    digitalWrite(PIN_BUZZER, buzzerState ? HIGH : LOW);
+  }
 }
 
 // ================= CAPTEURS =================
@@ -159,48 +171,21 @@ bool isOpenLimit() {
   return digitalRead(PIN_FIN_OUVERTURE) == LOW;
 }
 
-long readDistanceCm() {
-  digitalWrite(PIN_ULTRASON_TRIG, LOW);
-  delayMicroseconds(2);
 
-  digitalWrite(PIN_ULTRASON_TRIG, HIGH);
-  delayMicroseconds(10);
+// ================= Motor =================
 
-  digitalWrite(PIN_ULTRASON_TRIG, LOW);
+void setupMotorDriver() {
+  ledcAttach(PIN_MOTOR_IN1, 1000, 8);
+  ledcAttach(PIN_MOTOR_IN2, 1000, 8);
 
-  long duration = pulseIn(PIN_ULTRASON_ECHO, HIGH, 25000);
-
-  if (duration == 0) return 999;
-
-  return duration * 0.034 / 2;
+  ledcWrite(PIN_MOTOR_IN1, 0);
+  ledcWrite(PIN_MOTOR_IN2, 0);
 }
 
-bool obstacleDetected() {
-  return readDistanceCm() <= obstacleDistanceCm;
-}
-
-// ================= TMC2209 =================
-
-void setupTMC2209() {
-  TMCSerial.begin(115200, SERIAL_8N1, PIN_TMC_RX, PIN_TMC_TX);
-
-  driver.begin();
-  driver.toff(5);
-  driver.rms_current(700);
-  driver.microsteps(MICROSTEPS);
-  driver.en_spreadCycle(false);
-  driver.pwm_autoscale(true);
-
-  digitalWrite(PIN_TMC_EN, HIGH);
-}
-
-void enableMotor() {
-  digitalWrite(PIN_TMC_EN, LOW);
-}
 
 void disableMotor() {
-  digitalWrite(PIN_TMC_EN, HIGH);
-  digitalWrite(PIN_TMC_STEP, LOW);
+  ledcWrite(PIN_MOTOR_IN1, 0);
+  ledcWrite(PIN_MOTOR_IN2, 0);
 }
 
 // ================= MOTEUR =================
@@ -211,8 +196,15 @@ void startMotor(bool openDirection, String source) {
   motorStartMillis = millis();
   autoCloseWaiting = false;
 
-  digitalWrite(PIN_TMC_DIR, openDirection ? HIGH : LOW);
-  enableMotor();
+  updateSpeed();
+
+  if (openDirection) {
+    ledcWrite(PIN_MOTOR_IN1, motorPWM);
+    ledcWrite(PIN_MOTOR_IN2, 0);
+  } else {
+    ledcWrite(PIN_MOTOR_IN1, 0);
+    ledcWrite(PIN_MOTOR_IN2, motorPWM);
+  }
 
   gateState = "mouvement";
   motorState = openDirection ? "ouverture" : "fermeture";
@@ -221,25 +213,16 @@ void startMotor(bool openDirection, String source) {
   addLog(openDirection ? "Ouverture" : "Fermeture", source);
 }
 
+
 void stopMotor(String reason, String source) {
   motorRunning = false;
   motorState = "arrêté";
+
   disableMotor();
 
   addLog("Stop : " + reason, source);
 }
 
-void motorStepLoop() {
-  if (!motorRunning) return;
-
-  if (micros() - lastStepMicros >= stepIntervalUs) {
-    lastStepMicros = micros();
-
-    digitalWrite(PIN_TMC_STEP, HIGH);
-    delayMicroseconds(4);
-    digitalWrite(PIN_TMC_STEP, LOW);
-  }
-}
 
 void movementSecurityLoop() {
   if (!motorRunning) return;
@@ -266,33 +249,27 @@ void movementSecurityLoop() {
     addLog("Portail fermé", "capteur fermeture");
     return;
   }
-
-  if (!directionOpen && obstacleDetected()) {
-    stopMotor("obstacle", "ultrason");
-    gateState = "obstacle";
-    addLog("Obstacle détecté", "ultrason");
-
-    delay(300);
-
-    startMotor(true, "sécurité obstacle");
-  }
 }
 
 // ================= COMMANDES =================
 
 void commandOpen(String source) {
   if (motorRunning) return;
-  if (gateState == "ouvert") return;
+
+  if (gateState == "ouvert" && isOpenLimit()) return;
 
   startMotor(true, source);
 }
 
+
 void commandClose(String source) {
   if (motorRunning) return;
-  if (gateState == "fermé") return;
+
+  if (gateState == "fermé" && isClosedLimit()) return;
 
   startMotor(false, source);
 }
+
 
 void commandStop(String source) {
   if (motorRunning) {
@@ -300,37 +277,120 @@ void commandStop(String source) {
   }
 }
 
+
 void commandHome(String source) {
   if (motorRunning) {
     commandStop(source);
-  } else if (gateState == "fermé") {
+    return;
+  }
+
+  if (isClosedLimit()) {
+    gateState = "fermé";
+    commandOpen(source);
+    return;
+  }
+
+  if (isOpenLimit()) {
+    gateState = "ouvert";
+    commandClose(source);
+    return;
+  }
+
+  if (gateState == "fermé") {
     commandOpen(source);
   } else if (gateState == "ouvert") {
     commandClose(source);
   } else {
-    commandOpen(source);
+    commandClose(source);
+  }
+}
+
+
+void serialStatusLoop() {
+  if (millis() - lastSerialMillis < 1000) return;
+  lastSerialMillis = millis();
+
+  Serial.println("------ ETAT SYSTEME ------");
+  Serial.print("Portail : ");
+  Serial.println(gateState);
+
+  Serial.print("Moteur : ");
+  Serial.println(motorState);
+
+  Serial.print("En mouvement : ");
+  Serial.println(motorRunning ? "OUI" : "NON");
+
+  Serial.print("Bouton : ");
+  Serial.println(digitalRead(PIN_BOUTON) == LOW ? "APPUYE" : "RELACHE");
+
+  Serial.print("Fin fermé : ");
+  Serial.println(isClosedLimit() ? "ACTIF" : "INACTIF");
+
+  Serial.print("Fin ouvert : ");
+  Serial.println(isOpenLimit() ? "ACTIF" : "INACTIF");
+
+  Serial.print("Vitesse : ");
+  Serial.print(motorSpeedPercent);
+  Serial.println("%");
+
+  Serial.print("PWM : ");
+  Serial.println(motorPWM);
+
+  Serial.print("Derniere commande : ");
+  Serial.println(lastCommand);
+
+  Serial.println("--------------------------");
+}
+
+void debugInputChangesLoop() {
+  bool buttonState = digitalRead(PIN_BOUTON);
+  bool closedState = digitalRead(PIN_FIN_FERMETURE);
+  bool openState = digitalRead(PIN_FIN_OUVERTURE);
+
+  if (buttonState != lastButtonPrinted) {
+    Serial.print("[DEBUG] Bouton = ");
+    Serial.println(buttonState == LOW ? "APPUYE" : "RELACHE");
+    lastButtonPrinted = buttonState;
+  }
+
+  if (closedState != lastClosedLimitPrinted) {
+    Serial.print("[DEBUG] Fin fermeture = ");
+    Serial.println(closedState == LOW ? "ACTIF" : "INACTIF");
+    lastClosedLimitPrinted = closedState;
+  }
+
+  if (openState != lastOpenLimitPrinted) {
+    Serial.print("[DEBUG] Fin ouverture = ");
+    Serial.println(openState == LOW ? "ACTIF" : "INACTIF");
+    lastOpenLimitPrinted = openState;
   }
 }
 
 // ================= BOUTON =================
 
 void buttonLoop() {
-  static bool lastState = HIGH;
-  static unsigned long lastChange = 0;
+  static bool lastReading = HIGH;
+  static bool stableState = HIGH;
+  static unsigned long lastDebounceTime = 0;
 
-  bool state = digitalRead(PIN_BOUTON);
+  bool reading = digitalRead(PIN_BOUTON);
 
-  if (state != lastState) {
-    lastChange = millis();
+  if (reading != lastReading) {
+    lastDebounceTime = millis();
   }
 
-  if ((millis() - lastChange) > 70) {
-    if (lastState == HIGH && state == LOW) {
-      commandHome("bouton");
+  if ((millis() - lastDebounceTime) > 70) {
+    if (reading != stableState) {
+      stableState = reading;
+
+      if (stableState == LOW) {
+        Serial.println("[BOUTON] Appui detecte");
+        commandHome("bouton");
+      }
     }
   }
 
-  lastState = state;
+  lastReading = reading;
 }
 
 // ================= IR =================
@@ -367,6 +427,27 @@ void autoCloseLoop() {
   }
 }
 
+
+void positionProtectionLoop() {
+  if (millis() - lastPositionCheckMillis < 300) return;
+  lastPositionCheckMillis = millis();
+
+  if (motorRunning) return;
+
+  if (gateState == "fermé" && !isClosedLimit()) {
+    Serial.println("[SECURITE] Portail ferme deplace manuellement -> fermeture");
+    addLog("Déplacement manuel détecté depuis fermé", "sécurité");
+    commandClose("sécurité position");
+    return;
+  }
+
+  if (gateState == "ouvert" && !isOpenLimit()) {
+    Serial.println("[SECURITE] Portail ouvert deplace manuellement -> ouverture");
+    addLog("Déplacement manuel détecté depuis ouvert", "sécurité");
+    commandOpen("sécurité position");
+    return;
+  }
+}
 // ================= VOYANTS =================
 
 void ledsLoop() {
@@ -378,7 +459,6 @@ void ledsLoop() {
   if (motorRunning) {
     digitalWrite(PIN_LED_ROUGE, blinkState);
     digitalWrite(PIN_LED_VERTE, LOW);
-    digitalWrite(PIN_BUZZER, HIGH);
     return;
   }
 
@@ -466,7 +546,7 @@ int getJsonInt(String b, String key, int def) {
 }
 
 void handleStatus() {
-  bool obs = obstacleDetected();
+  bool obs = false;
 
   String json = "{";
   json += "\"gateState\":\"" + gateState + "\",";
@@ -560,10 +640,28 @@ void startWiFiAP() {
   }
 }
 
+
+
+void initialClose() {
+  if (motorRunning) return;
+
+  gateState = "mouvement";
+  motorState = "fermeture";
+  lastCommand = "initialisation";
+
+  addLog("Fermeture initiale", "système");
+
+  startMotor(false, "initialisation");
+}
+
+
 // ================= SETUP =================
 
 void setup() {
   Serial.begin(115200);
+  delay(1000);
+  Serial.println();
+  Serial.println("===== DEMARRAGE PORTAIL CONNECTE =====");
 
   pinMode(PIN_LED_ROUGE, OUTPUT);
   pinMode(PIN_LED_VERTE, OUTPUT);
@@ -575,13 +673,7 @@ void setup() {
   pinMode(PIN_FIN_FERMETURE, INPUT_PULLUP);
   pinMode(PIN_FIN_OUVERTURE, INPUT_PULLUP);
 
-  pinMode(PIN_ULTRASON_TRIG, OUTPUT);
-  pinMode(PIN_ULTRASON_ECHO, INPUT);
-
-  pinMode(PIN_TMC_STEP, OUTPUT);
-  pinMode(PIN_TMC_DIR, OUTPUT);
-  pinMode(PIN_TMC_EN, OUTPUT);
-
+  setupMotorDriver();
   disableMotor();
 
   Wire.begin(PIN_RTC_SDA, PIN_RTC_SCL);
@@ -598,21 +690,30 @@ void setup() {
     Serial.println("Erreur SPIFFS");
   }
 
-  setupTMC2209();
-
   IrReceiver.begin(PIN_IR, ENABLE_LED_FEEDBACK);
 
   loadSettings();
   updateSpeed();
 
-  gateState = "fermé";
+  gateState = "inconnu";
   motorState = "arrêté";
   autoCloseWaiting = false;
 
   addLog("Démarrage système", "système");
-  addLog("État initial : fermé", "système");
+
+  if (isClosedLimit()) {
+    gateState = "fermé";
+    motorState = "arrêté";
+    addLog("État initial : fermé", "système");
+  } else {
+    initialClose();
+  }
 
   startWiFiAP();
+
+  Serial.println("[SETUP] Serveur Web pret");
+  Serial.println("Connecte-toi au WiFi : Portail_Connecte");
+  Serial.println("Adresse : http://192.168.4.1");
 
   server.on("/", HTTP_GET, handleRoot);
   server.on("/style.css", HTTP_GET, handleCSS);
@@ -634,9 +735,13 @@ void loop() {
   buttonLoop();
   irLoop();
 
-  motorStepLoop();
   movementSecurityLoop();
+  positionProtectionLoop();
 
   autoCloseLoop();
   ledsLoop();
+  buzzerIntermittentLoop();
+
+  debugInputChangesLoop();
+  serialStatusLoop();
 }
