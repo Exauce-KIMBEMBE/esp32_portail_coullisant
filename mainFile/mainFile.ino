@@ -23,9 +23,9 @@ RTC_DS1307 rtc;
 
 // ================= IR NEC =================
 
-#define CMD_ouverture  0x08
-#define CMD_Fermeture  0x5A
-#define CMD_STOP       0x1C
+#define CMD_ouverture  0x08 // touche 6
+#define CMD_Fermeture  0x5A // touche 2
+#define CMD_STOP       0x1C // touche 5
 
 // ================= GPIO =================
 
@@ -398,20 +398,43 @@ void buttonLoop() {
 void irLoop() {
   if (!IrReceiver.decode()) return;
 
+  Serial.println();
+  Serial.println("===== COMMANDE IR RECUE =====");
+  Serial.print("Protocole : ");
+  Serial.println(IrReceiver.getProtocolString());
+
+  Serial.print("Adresse : 0x");
+  Serial.println(IrReceiver.decodedIRData.address, HEX);
+
+  Serial.print("Commande : 0x");
+  Serial.println(IrReceiver.decodedIRData.command, HEX);
+
+  Serial.print("Raw data : 0x");
+  Serial.println(IrReceiver.decodedIRData.decodedRawData, HEX);
+
   if (IrReceiver.decodedIRData.protocol == NEC) {
     uint8_t command = IrReceiver.decodedIRData.command;
 
     if (command == CMD_ouverture) {
+      Serial.println("Action IR : OUVERTURE");
       commandOpen("IR NEC");
     } 
     else if (command == CMD_Fermeture) {
+      Serial.println("Action IR : FERMETURE");
       commandClose("IR NEC");
     } 
     else if (command == CMD_STOP) {
+      Serial.println("Action IR : STOP");
       commandStop("IR NEC");
     }
+    else {
+      Serial.println("IR reconnu mais commande inconnue");
+    }
+  } else {
+    Serial.println("Protocole IR non NEC");
   }
 
+  Serial.println("=============================");
   IrReceiver.resume();
 }
 
@@ -568,15 +591,42 @@ void handleStatus() {
 void handleCommand() {
   String b = body();
 
+  Serial.println();
+  Serial.println("===== COMMANDE WEB RECUE =====");
+  Serial.print("Body brut : ");
+  Serial.println(b);
+
   String cmd = getJsonString(b, "command");
   String source = getJsonString(b, "source");
 
   if (source == "") source = "web";
 
-  if (cmd == "open") commandOpen(source);
-  else if (cmd == "close") commandClose(source);
-  else if (cmd == "stop") commandStop(source);
-  else if (cmd == "home") commandHome(source);
+  Serial.print("Commande extraite : ");
+  Serial.println(cmd);
+  Serial.print("Source : ");
+  Serial.println(source);
+
+  if (cmd == "open") {
+    Serial.println("Action : OUVERTURE");
+    commandOpen(source);
+  }
+  else if (cmd == "close") {
+    Serial.println("Action : FERMETURE");
+    commandClose(source);
+  }
+  else if (cmd == "stop") {
+    Serial.println("Action : STOP");
+    commandStop(source);
+  }
+  else if (cmd == "home") {
+    Serial.println("Action : HOME");
+    commandHome(source);
+  }
+  else {
+    Serial.println("ERREUR : commande inconnue");
+  }
+
+  Serial.println("==============================");
 
   server.send(200, "application/json", "{\"ok\":true}");
 }
