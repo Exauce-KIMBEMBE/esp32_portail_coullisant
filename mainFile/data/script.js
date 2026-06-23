@@ -1,4 +1,5 @@
 let logsCache = [];
+let isEditingSettings = false;
 
 const motorSpeed = document.getElementById("motorSpeed");
 const speedValue = document.getElementById("speedValue");
@@ -6,12 +7,20 @@ const speedValue = document.getElementById("speedValue");
 const obstacleDistance = document.getElementById("obstacleDistance");
 const distanceValue = document.getElementById("distanceValue");
 
+const autoCloseInput = document.getElementById("autoCloseDelay");
+
 motorSpeed.addEventListener("input", () => {
+  isEditingSettings = true;
   speedValue.textContent = motorSpeed.value;
 });
 
 obstacleDistance.addEventListener("input", () => {
+  isEditingSettings = true;
   distanceValue.textContent = obstacleDistance.value;
+});
+
+autoCloseInput.addEventListener("input", () => {
+  isEditingSettings = true;
 });
 
 async function manualReconnect() {
@@ -42,7 +51,7 @@ async function sendCommand(command) {
 
 async function saveSettings() {
   try {
-    await fetch("/api/settings", {
+    const response = await fetch("/api/settings", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -50,14 +59,23 @@ async function saveSettings() {
       body: JSON.stringify({
         motorSpeedPercent: Number(motorSpeed.value),
         obstacleDistanceCm: Number(obstacleDistance.value),
-        autoCloseDelay: Number(document.getElementById("autoCloseDelay").value)
+        autoCloseDelay: Number(autoCloseInput.value)
       })
     });
 
+    if (!response.ok) {
+      throw new Error("Erreur sauvegarde");
+    }
+
+    isEditingSettings = false;
+
     await updateStatus();
+
+    alert("Réglages enregistrés");
 
   } catch (error) {
     setConnection(false);
+    alert("Erreur : réglages non enregistrés");
   }
 }
 
@@ -76,16 +94,19 @@ async function updateStatus() {
     document.getElementById("rtcTime").textContent = data.dateTime || "--:--:--";
     document.getElementById("gateState").textContent = data.gateState || "Inconnu";
     document.getElementById("motorState").textContent = "Moteur : " + (data.motorState || "--");
+
     document.getElementById("obstacleState").textContent =
       "Obstacle : " + (data.obstacle ? "Détecté" : "Aucun");
 
-    motorSpeed.value = data.motorSpeedPercent ?? 50;
-    speedValue.textContent = data.motorSpeedPercent ?? 50;
+    if (!isEditingSettings) {
+      motorSpeed.value = data.motorSpeedPercent ?? 50;
+      speedValue.textContent = data.motorSpeedPercent ?? 50;
 
-    obstacleDistance.value = data.obstacleDistanceCm ?? 40;
-    distanceValue.textContent = data.obstacleDistanceCm ?? 40;
+      obstacleDistance.value = data.obstacleDistanceCm ?? 40;
+      distanceValue.textContent = data.obstacleDistanceCm ?? 40;
 
-    document.getElementById("autoCloseDelay").value = data.autoCloseDelay ?? 30;
+      autoCloseInput.value = data.autoCloseDelay ?? 30;
+    }
 
     updateGateIndicator(data);
     updateLed("redLed", data.redLed, "red");
@@ -188,58 +209,20 @@ function downloadLogsPDF() {
     return;
   }
 
-  let content = "Historique SlideGate\n\n";
+  let content = "Historique Portail Connecté\n\n";
 
   logsCache.forEach(log => {
     content += `${log.dateTime} - ${log.action} - ${log.source}\n`;
   });
 
-  const pdf = createSimplePDF(content);
-  const blob = new Blob([pdf], { type: "application/pdf" });
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
 
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = "historique_portail.pdf";
+  link.download = "historique_portail.txt";
   link.click();
 
   URL.revokeObjectURL(link.href);
-}
-
-function createSimplePDF(text) {
-  const lines = text.split("\n");
-  let y = 780;
-  let stream = "BT\n/F1 12 Tf\n";
-
-  lines.forEach(line => {
-    const safeLine = line.replace(/[()]/g, "");
-    stream += `50 ${y} Td (${safeLine}) Tj\n`;
-    y -= 18;
-  });
-
-  stream += "ET";
-
-  return `%PDF-1.4
-1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
-endobj
-2 0 obj
-<< /Type /Pages /Kids [3 0 R] /Count 1 >>
-endobj
-3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
-endobj
-4 0 obj
-<< /Length ${stream.length} >>
-stream
-${stream}
-endstream
-endobj
-5 0 obj
-<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
-endobj
-trailer
-<< /Root 1 0 R >>
-%%EOF`;
 }
 
 setInterval(updateStatus, 1500);
